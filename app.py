@@ -2,9 +2,27 @@ import streamlit as st
 import joblib
 from backend import clean_tweet, nltk_preprocess
 from scipy.sparse import hstack
-import numpy as np
+import joblib
+import time
 
-# Load the trained model and vectorizer
+# Download necessary NLTK packages
+nltk.download('stopwords')
+nltk.download('punkt')
+
+# Function to clean the tweet text
+def clean_tweet(tweet):
+    tweet = re.sub(r"(@[A-Za-z0-9_]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", str(tweet))
+    tweet = re.sub(r"\s+", " ", tweet).strip()
+    return tweet
+
+# Function to preprocess the text using NLTK
+def nltk_preprocess(text):
+    stop_words = set(stopwords.words('english'))
+    words = word_tokenize(text.lower())
+    filtered_words = [word for word in words if word.isalnum() and word not in stop_words]
+    return " ".join(filtered_words)
+
+# Function to load the trained model and vectorizer
 def load_model_and_vectorizer():
     model = joblib.load("best_emotion_model.pkl")
     vectorizer = joblib.load("vectorizer.pkl")
