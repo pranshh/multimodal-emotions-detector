@@ -20,7 +20,7 @@ import time
 
 # Download necessary NLTK packages
 nltk.download('stopwords')
-nltk.download('punkt')
+nltk.download('punkt_tab')
 
 # Function to clean the tweet text
 def clean_tweet(tweet):
