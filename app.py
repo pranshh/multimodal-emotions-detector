@@ -10,7 +10,7 @@ import numpy as np
 
 # Download necessary NLTK packages
 nltk.download('stopwords')
-nltk.download('punkt')
+nltk.download('punkt_tab')
 
 # Function to clean the tweet text
 def clean_tweet(tweet):
@@ -48,6 +48,9 @@ def predict_emotion(input_text, model, vectorizer):
     prediction = model.predict(combined_features)
     return prediction[0]
 
+# Load the label mapping
+label_mapping = {0: 'anger', 1: 'fear', 2: 'joy', 3: 'sadness'}
+
 # Streamlit User Interface
 st.title("Emotion Detection from Text")
 
@@ -64,7 +67,8 @@ if st.button("Predict Emotion"):
         with st.spinner('Predicting emotion...'):
             try:
                 # Predict the emotion
-                predicted_emotion = predict_emotion(input_text, model, vectorizer)
+                predicted_emotion_idx = predict_emotion(input_text, model, vectorizer)
+                predicted_emotion = label_mapping[predicted_emotion_idx]
                 st.write(f"The predicted emotion is: **{predicted_emotion}**")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
