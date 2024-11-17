@@ -1,9 +1,12 @@
 import streamlit as st
-import joblib
-from backend import clean_tweet, nltk_preprocess
+import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from sklearn.feature_extraction.text import CountVectorizer
 from scipy.sparse import hstack
 import joblib
-import time
+import numpy as np
 
 # Download necessary NLTK packages
 nltk.download('stopwords')
@@ -24,41 +27,46 @@ def nltk_preprocess(text):
 
 # Function to load the trained model and vectorizer
 def load_model_and_vectorizer():
-    model = joblib.load("best_emotion_model.pkl")
-    vectorizer = joblib.load("vectorizer.pkl")
+    model = joblib.load("best_emotion_model.pkl")  # Load the best trained model
+    vectorizer = joblib.load("vectorizer.pkl")  # Load the vectorizer
     return model, vectorizer
 
-# Function to predict emotion from user input
+# Function to preprocess and predict the emotion from the input text
 def predict_emotion(input_text, model, vectorizer):
     # Clean and preprocess input text
     cleaned_text = clean_tweet(input_text)
     processed_text = nltk_preprocess(cleaned_text)
-    
+
     # Vectorize the input text
     vectorized_text = vectorizer.transform([processed_text])
-    
-    # Add a placeholder for the intensity feature
+
+    # Add a placeholder for the intensity feature (set to 0 as a default)
     intensity_placeholder = np.array([[0]])  # Replace '0' with actual intensity if available
     combined_features = hstack((vectorized_text, intensity_placeholder))  # Combine features
-    
+
     # Predict using the model
     prediction = model.predict(combined_features)
     return prediction[0]
 
-
-
-# Streamlit app interface
+# Streamlit User Interface
 st.title("Emotion Detection from Text")
 
-st.subheader("Enter a text to analyze its emotion")
-input_text = st.text_area("Your input text:", "")
+# Load the trained model and vectorizer
+model, vectorizer = load_model_and_vectorizer()
 
-if input_text:
-    with st.spinner("Predicting emotion..."):
+# Input for text
+st.subheader("Enter a sentence to predict its emotion:")
+input_text = st.text_area("Text Input", "")
 
-        model, vectorizer = load_model_and_vectorizer()
-        predicted_emotion = predict_emotion(input_text, model, vectorizer)
-
-    # Map numeric prediction back to emotion
-    emotion_mapping = {0: "anger", 1: "fear", 2: "joy", 3: "sadness"}
-    st.write(f"The predicted emotion is: **{emotion_mapping[predicted_emotion]}**")
+# Predict button
+if st.button("Predict Emotion"):
+    if input_text.strip():
+        with st.spinner('Predicting emotion...'):
+            try:
+                # Predict the emotion
+                predicted_emotion = predict_emotion(input_text, model, vectorizer)
+                st.write(f"The predicted emotion is: **{predicted_emotion}**")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+    else:
+        st.warning("Please enter some text for prediction.")
