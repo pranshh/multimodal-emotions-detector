@@ -14,51 +14,48 @@ import joblib
 import librosa
 import os
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-import requests
+import joblib
 
-def download_model_from_drive(drive_url, destination):
-    # Function to download model from Google Drive
-    if os.path.exists(destination):
-        st.write(f"{destination} already exists.")
-        return
-    st.write(f"Downloading model from {drive_url}...")
-    response = requests.get(drive_url, stream=True)
-    with open(destination, 'wb') as file:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                file.write(chunk)
-    st.write("Download completed.")
+# Load the label encoder
+label_encoder = joblib.load('label_encoder.pkl')  
 
-# URLs to your models on Google Drive
-image_model_paths = {
-    "VGG19": "https://drive.google.com/file/d/1kHOQDJum7vYBF5hWoG00LStGqk8Dp9-V/view?usp=drive_link",
-    "MobileNet": "https://drive.google.com/file/d/14WFyz9dAAkg9wkm2Ct1Xoo-Z6O7rFloq/view?usp=sharing",
-    "EfficientNetB7": "https://drive.google.com/file/d/1j421sEEyp4p4GkhVS_JCJHkKmY8OWCkb/view?usp=sharing",
-    "DenseNet121": "https://drive.google.com/file/d/1y1B8Blq62rd0tezR3R_UIOJwtrWzdyW8/view?usp=sharing",
-    "ResNet50": "https://drive.google.com/file/d/1cGpFKLFD4JZszKX-NwuDVyWp6GLgA_fJ/view?usp=sharing"
-}
-
-# Download models if not already downloaded
-for model_name, drive_url in image_model_paths.items():
-    download_model_from_drive(drive_url, image_model_paths[model_name])
+scaler = joblib.load('standard_scaler.pkl')
 
 # Load your pre-trained models from the directory
+model_paths = {
+    "DenseNet121": "densenet121_model.keras",
+    "MobileNet": "mobilenet_model.keras"
+}
 
+def load_models(model_paths):
+    models = {}
+    for name, path in model_paths.items():
+        try:
+            models[name] = load_model(path)
+        except Exception as e:
+            return models
 
-image_models = {name: load_model(path) for name, path in image_model_paths.items()}
+image_models = load_models(model_paths)
 
 # Load LSTM models for speech emotion detection
 speech_model_paths = {
-    "Spectrogram LSTM": "spectogram_lstm_model.keras",
-    "LSTM": "lstm_model.keras",
     "MFCC LSTM": "mfcc_lstm_model.keras",
 }
 
-speech_models = {name: load_model(path) for name, path in speech_model_paths.items()}
+def load_speech_models(speech_model_paths):
+    models = {}
+    for name, path in speech_model_paths.items():
+        try:
+            models[name] = load_model(path)
+        except Exception as e:
+            st.write(f"Error loading speech model {name} from path {path}: {e}")
+    return models
+
+speech_models = load_speech_models(speech_model_paths)
 
 # Define class labels
 class_labels = ["anger", "disgust", "fear", "happiness", "sadness", "surprise", "neutral"]
-speech_labels = {0: 'neutral', 1: 'disgust', 2: 'sad', 3: 'pleasant_surprise', 4: 'angry', 5: 'fear', 6: 'happy'}
+speech_labels = dict(enumerate(label_encoder.classes_))
 
 # Function to preprocess the image
 def preprocess_image(image, target_size=(48, 48)):
@@ -101,34 +98,47 @@ def predict_emotion(input_text, model, vectorizer):
     prediction = model.predict(combined_features)
     return prediction[0]
 
-# Function to extract features from speech
 def extract_features(file_path):
+    # Load audio file
     y, sr = librosa.load(file_path)
-    chroma_stft = librosa.feature.chroma_stft(y=y, sr=sr)
-    chroma_stft_mean = np.mean(chroma_stft, axis=1)
 
-    fft = np.fft.fft(y)
-    fft_mean = np.mean(np.abs(fft))
-
+    # Extract MFCCs
     mfccs = librosa.feature.mfcc(y=y, sr=sr)
     mfccs_mean = np.mean(mfccs, axis=1)
 
-    spectrogram = librosa.amplitude_to_db(librosa.stft(y))
-    spectrogram_mean = np.mean(spectrogram, axis=1)
+    # Reshape and scale features
+    mfccs_mean = mfccs_mean.reshape(1, -1)
+    scaler = StandardScaler()
+    mfccs_mean = scaler.fit_transform(mfccs_mean)
 
-    features = np.concatenate((chroma_stft_mean, [fft_mean], mfccs_mean, spectrogram_mean))
-    return features.reshape((1, 1, -1))
+    # Reshape for LSTM input
+    mfccs_mean = mfccs_mean.reshape((1, 1, mfccs_mean.shape[1]))
+    
+    return mfccs_mean
 
-# Function to predict the emotion from speech using each model
-def predict_speech_emotions(file_path, models):
-    features = extract_features(file_path)
-    predictions = {}
-    for model_name, model in models.items():
-        prediction = model.predict(features)
-        predicted_class = np.argmax(prediction, axis=1)[0]
-        predicted_label = speech_labels[predicted_class]
-        predictions[model_name] = predicted_label
-    return predictions
+def predict_speech_emotions(uploaded_file, model):
+    # Load audio file from uploaded file
+    y, sr = librosa.load(uploaded_file)
+
+    # Extract MFCCs
+    mfccs = librosa.feature.mfcc(y=y, sr=sr)
+    mfccs_mean = np.mean(mfccs, axis=1)
+
+    # Reshape and scale features using the saved scaler
+    mfccs_mean = mfccs_mean.reshape(1, -1)
+    mfccs_mean = scaler.transform(mfccs_mean)
+
+    # Reshape for LSTM input
+    mfccs_mean = mfccs_mean.reshape((1, 1, mfccs_mean.shape[1]))
+    
+    # Predict emotion
+    prediction = model.predict(mfccs_mean)
+    
+    # Clip the prediction to the valid range of 0-6
+    predicted_class = min(np.argmax(prediction, axis=1)[0], 6)
+    
+    return predicted_class
+
 
 # Streamlit User Interface
 st.title("Multimodal Emotion Detector")
@@ -194,18 +204,11 @@ elif option == "Image":
 elif option == "Speech":
     st.subheader("Emotion Detection from Speech")
 
-    # Create an upload field for audio file
     uploaded_file = st.file_uploader("Choose an audio file...", type=["wav", "mp3"])
 
     if uploaded_file is not None:
-        # Save the uploaded file temporarily
-        with open("temp_audio_file.wav", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        # Predict the emotion using each model
-        predictions = predict_speech_emotions("temp_audio_file.wav", speech_models)
-        
-        # Display the predictions
-        for model_name, predicted_label in predictions.items():
-            st.write(f"{model_name} Prediction: **{predicted_label}**")
-
+        try:
+            predicted_class = predict_speech_emotions(uploaded_file, speech_models["MFCC LSTM"])
+            st.write(f"Predicted Emotion: **{speech_labels[predicted_class]}**")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
